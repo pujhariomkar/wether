@@ -1,81 +1,69 @@
-package com.example.openbanking.ratelimit;
+package com.example.openbanking.filter;
 
-import org.springframework.stereotype.Service;
+import com.example.openbanking.ratelimit.SimpleRateLimiter;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
 
 /**
- * Sliding-window rate limiter (no external libs).
- * - Uses a Deque<Long> of timestamps per key.
- * - Thread-safe via per-key synchronization on the Deque.
+ * RateLimit filter that only protects the target endpoint.
  */
-@Service
-public class SimpleRateLimiter {
+@Component
+public class RateLimitFilter extends OncePerRequestFilter {
 
-    // key -> deque of request timestamps (millis)
-    private final Map<String, Deque<Long>> requests = new ConcurrentHashMap<>();
+    @Autowired
+    private SimpleRateLimiter rateLimiter;
 
-    // Configurable limits
-    private final int MAX_REQUESTS;
-    private final long WINDOW_MILLIS;
+    // Endpoint to protect
+    private static final String PROTECTED_PATH = "/headerFilestatus/checkFileStatus-Dabit";
 
-    public SimpleRateLimiter() {
-        this.MAX_REQUESTS = 5;            // max requests
-        this.WINDOW_MILLIS = 60_000L;     // window length (1 minute)
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
+        // Apply only to POST on the specific path
+        String path = request.getServletPath();
+        String method = request.getMethod();
+        return !(PROTECTED_PATH.equals(path) && "POST".equalsIgnoreCase(method));
     }
 
-    // Optional constructor to programmatically set limits
-    public SimpleRateLimiter(int maxRequests, long windowMillis) {
-        this.MAX_REQUESTS = maxRequests;
-        this.WINDOW_MILLIS = windowMillis;
+    @Override
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain filterChain) throws ServletException, IOException {
+
+        // Choose key: by IP here. To use API key / username, read header or principal.
+        String clientIp = extractClientIp(request);
+
+        if (!rateLimiter.isAllowed(clientIp)) {
+            // Rate limit exceeded
+            int retryAfterSeconds = (int) (rateLimiter.getWindowMillis() / 1000);
+            response.setStatus(429); // Too Many Requests
+            response.setHeader("Retry-After", String.valueOf(retryAfterSeconds));
+            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            String message = String.format("{\"error\":\"Too Many Requests\",\"message\":\"Rate limit exceeded. Try again later.\"}");
+            response.getWriter().write(message);
+            return;
+        }
+
+        // proceed normally
+        filterChain.doFilter(request, response);
     }
 
     /**
-     * Check if a request is allowed for given key (IP or user id).
-     * @param key identifying client (e.g. IP or API key)
-     * @return true if allowed, false if rate limit exceeded
+     * Extract client IP. If behind proxy, consider X-Forwarded-For header.
      */
-    public boolean isAllowed(String key) {
-        long now = System.currentTimeMillis();
-
-        // get or create deque
-        Deque<Long> deque = requests.computeIfAbsent(key, k -> new ArrayDeque<>());
-
-        synchronized (deque) {
-            // remove timestamps older than window
-            while (!deque.isEmpty() && (now - deque.peekFirst()) > WINDOW_MILLIS) {
-                deque.removeFirst();
-            }
-
-            if (deque.size() >= MAX_REQUESTS) {
-                // rate limit exceeded
-                return false;
-            } else {
-                // record current timestamp
-                deque.addLast(now);
-                return true;
-            }
+    private String extractClientIp(HttpServletRequest request) {
+        String xf = request.getHeader("X-Forwarded-For");
+        if (xf != null && !xf.isBlank()) {
+            // may contain multiple IPs, first is original client
+            return xf.split(",")[0].trim();
         }
+        return request.getRemoteAddr();
     }
-
-    /**
-     * Utility: how many requests remain in current window for this key.
-     */
-    public int remaining(String key) {
-        long now = System.currentTimeMillis();
-        Deque<Long> deque = requests.get(key);
-        if (deque == null) return MAX_REQUESTS;
-        synchronized (deque) {
-            while (!deque.isEmpty() && (now - deque.peekFirst()) > WINDOW_MILLIS) {
-                deque.removeFirst();
-            }
-            return Math.max(0, MAX_REQUESTS - deque.size());
-        }
-    }
-
-    public int getMaxRequests() { return MAX_REQUESTS; }
-    public long getWindowMillis() { return WINDOW_MILLIS; }
 }
