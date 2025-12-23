@@ -1,12 +1,17 @@
-SELECT 
-    m.STATUS, 
-    NVL(COUNT(t.STATUS), 0) AS STATUS_COUNT
+
+SELECT s.status,
+       COUNT(d.status) AS status_count
 FROM (
-    -- This creates a master list of all statuses that exist in your data
-    SELECT DISTINCT STATUS FROM YOUR_TABLE_NAME
-) m
-LEFT JOIN YOUR_TABLE_NAME t 
-    ON m.STATUS = t.STATUS 
-    AND TRUNC(t.FILE_RECEIVED_DATE) = TO_DATE('2023-10-27', 'YYYY-MM-DD')
-GROUP BY m.STATUS
-ORDER BY m.STATUS;
+    SELECT 0 status FROM dual UNION ALL
+    SELECT 1 FROM dual UNION ALL
+    SELECT 2 FROM dual UNION ALL
+    SELECT 3 FROM dual UNION ALL
+    SELECT 4 FROM dual UNION ALL
+    SELECT 5 FROM dual
+) s
+LEFT JOIN ADESH_DEC_LOGS d
+  ON d.status = s.status
+ AND d.file_received_date >= DATE '2025-12-15'
+ AND d.file_received_date <  DATE '2025-12-16'
+GROUP BY s.status
+ORDER BY s.status;
