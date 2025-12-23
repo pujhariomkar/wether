@@ -11,7 +11,6 @@ FROM (
 ) s
 LEFT JOIN ADESH_DEC_LOGS d
   ON d.status = s.status
- AND d.file_received_date >= :input_date
- AND d.file_received_date <  :input_date + 1
+ AND TRUNC(d.file_received_date) = :input_date
 GROUP BY s.status
 ORDER BY s.status;
