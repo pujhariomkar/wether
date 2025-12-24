@@ -1,20 +1,23 @@
 
+import { HttpClient, HttpHeaders, HttpResponse } from '@angular/common/http';
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
-@Injectable({
-  providedIn: 'root'
-})
+@Injectable({ providedIn: 'root' })
 export class ApiService {
 
   constructor(private http: HttpClient) {}
 
-  getData(): Observable<HttpResponse<any>> {
-    const url = 'YOUR_API_URL_HERE';
+  postAdeshDetails(url: string, headers: HttpHeaders, data: any)
+    : Observable<HttpResponse<any>> {
 
-    return this.http.get<any>(url, {
-      observe: 'response'
-    });
+    return this.http.post<any>(
+      url,
+      data,
+      {
+        headers: headers,
+        observe: 'response'   // ⭐ REQUIRED
+      }
+    );
   }
 }
