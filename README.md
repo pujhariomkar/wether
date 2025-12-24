@@ -1,23 +1,34 @@
-
-import { HttpClient, HttpHeaders, HttpResponse } from '@angular/common/http';
 import { Injectable } from '@angular/core';
-import { Observable } from 'rxjs';
+import {
+  HttpEvent,
+  HttpInterceptor,
+  HttpHandler,
+  HttpRequest,
+  HttpResponse
+} from '@angular/common/http';
+import { Observable, tap } from 'rxjs';
 
-@Injectable({ providedIn: 'root' })
-export class ApiService {
+@Injectable()
+export class SignatureInterceptor implements HttpInterceptor {
 
-  constructor(private http: HttpClient) {}
+  intercept(
+    req: HttpRequest<any>,
+    next: HttpHandler
+  ): Observable<HttpEvent<any>> {
 
-  postAdeshDetails(url: string, headers: HttpHeaders, data: any)
-    : Observable<HttpResponse<any>> {
+    return next.handle(req).pipe(
+      tap(event => {
+        if (event instanceof HttpResponse) {
 
-    return this.http.post<any>(
-      url,
-      data,
-      {
-        headers: headers,
-        observe: 'response'   // ⭐ REQUIRED
-      }
+          const signature = event.headers.get('x-signature');
+          const timestamp = event.headers.get('x-timestamp');
+
+          if (signature && timestamp) {
+            sessionStorage.setItem('x-signature', signature);
+            sessionStorage.setItem('x-timestamp', timestamp);
+          }
+        }
+      })
     );
   }
 }
